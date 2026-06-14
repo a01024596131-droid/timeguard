@@ -128,6 +128,7 @@
         <button onclick="goScreen('home')">← 처음으로</button>
         <button onclick="goScreen('settings')">⚙ 설정</button>
       </div>
+      <p class="install-tip" id="closeWarn" style="display:none">⚠️ 타이머가 작동 중입니다. 창을 완전히 닫지 마세요!<br>닫으면 알림을 받지 못할 수 있어요.</p>
     </div>
 
     <!-- 화면 3: 설정 -->
@@ -159,15 +160,6 @@
         <label>음 높이</label>
         <input type="range" id="soundFreq" min="200" max="1200" value="660" oninput="saveSettings()">
         <button class="toggle-btn" onclick="testSound()">미리듣기</button>
-      </div>
-      <div class="toggle-row">
-        <div class="label-wrap">진동<div class="sub">휴대폰 진동 (지원 기기만)</div></div>
-        <button class="toggle-btn on" id="vibToggle" onclick="toggleVib()">켜짐</button>
-      </div>
-      <div class="slider-row">
-        <label>진동 세기</label>
-        <input type="range" id="vibLen" min="100" max="1500" value="600" oninput="saveSettings()">
-        <button class="toggle-btn" onclick="testVib()">미리진동</button>
       </div>
 
       <p class="section-label">특별 모드</p>
@@ -280,6 +272,11 @@
       if (!isNaN(min) && min > 0) { remainingSeconds = Math.floor(min) * 60; display.classList.remove("blink"); updateDisplay(); }
       else alert("0보다 큰 숫자를 입력해 주세요!");
     }
+    function showCloseWarn(on) {
+      // 타이머 작동 중일 때만 '창을 닫지 마세요' 안내를 보여줌
+      const el = document.getElementById("closeWarn");
+      if (el) el.style.display = on ? "block" : "none";
+    }
     function startTimer() {
       if (remainingSeconds <= 0) { alert("먼저 시간을 설정해 주세요!"); return; }
       if (isRunning) return;
@@ -287,6 +284,7 @@
       const endTime = Date.now() + remainingSeconds * 1000;
       localStorage.setItem(KEY_END, endTime);
       timerInterval = setInterval(tick, 1000);
+      showCloseWarn(true);   // 안내 켜기
     }
     function tick() {
       const endTime = Number(localStorage.getItem(KEY_END));
@@ -297,17 +295,19 @@
     function pauseTimer() {
       if (!isRunning) return;
       isRunning = false; clearInterval(timerInterval); localStorage.removeItem(KEY_END);
+      showCloseWarn(false);
     }
     function resetTimer() {
       isRunning = false; clearInterval(timerInterval); localStorage.removeItem(KEY_END);
       remainingSeconds = 0; display.classList.remove("blink"); body.classList.remove("time-over"); updateDisplay();
+      showCloseWarn(false);
     }
     function timeOver() {
       isRunning = false; clearInterval(timerInterval); localStorage.removeItem(KEY_END);
       body.classList.add("time-over"); display.classList.add("blink"); modal.classList.add("show");
       reallyGo("timer");
+      showCloseWarn(false);
       playAlarm();          // 화면 안 소리
-      doVibrate();          // 진동
       sendNotification();   // ★ 서비스 워커 알림(탭이 가려져 있어도 시도)
     }
     function closeModal() { modal.classList.remove("show"); }
@@ -320,6 +320,7 @@
       remainingSeconds = Math.round((endTime - Date.now()) / 1000);
       if (remainingSeconds > 0) {
         isRunning = true; reallyGo("timer"); updateDisplay(); timerInterval = setInterval(tick, 1000);
+        showCloseWarn(true);
       } else { remainingSeconds = 0; updateDisplay(); timeOver(); }
     }
     document.addEventListener("visibilitychange", function () {
@@ -330,9 +331,9 @@
     });
 
     /* ============================================================
-       (D) 소리 / 진동
+       (D) 소리
     ============================================================ */
-    let soundOn = true, vibOn = true;
+    let soundOn = true;
     function playAlarm() {
       if (!soundOn) return;
       try {
@@ -347,20 +348,10 @@
         });
       } catch (e) {}
     }
-    function doVibrate() {
-      if (!vibOn) return;
-      const len = Number(document.getElementById("vibLen").value);
-      if (navigator.vibrate) navigator.vibrate([len, 150, len]);
-    }
     function testSound() { const w = soundOn; soundOn = true; playAlarm(); soundOn = w; }
-    function testVib() { const w = vibOn; vibOn = true; doVibrate(); vibOn = w; }
     function toggleSound() {
       soundOn = !soundOn; const b = document.getElementById("soundToggle");
       b.textContent = soundOn ? "켜짐" : "꺼짐"; b.classList.toggle("on", soundOn); saveSettings();
-    }
-    function toggleVib() {
-      vibOn = !vibOn; const b = document.getElementById("vibToggle");
-      b.textContent = vibOn ? "켜짐" : "꺼짐"; b.classList.toggle("on", vibOn); saveSettings();
     }
 
     /* ============================================================
@@ -427,8 +418,8 @@
     ============================================================ */
     function saveSettings() {
       const data = {
-        theme: selectedTheme, pattern: selectedPattern, bg: bgColor, sound: soundOn, vib: vibOn,
-        soundFreq: document.getElementById("soundFreq").value, vibLen: document.getElementById("vibLen").value,
+        theme: selectedTheme, pattern: selectedPattern, bg: bgColor, sound: soundOn,
+        soundFreq: document.getElementById("soundFreq").value,
       };
       localStorage.setItem(KEY_SET, JSON.stringify(data));
     }
@@ -437,16 +428,13 @@
       if (raw) {
         const d = JSON.parse(raw);
         selectedTheme = d.theme ?? 1; selectedPattern = d.pattern ?? 0; bgColor = d.bg ?? "#0d0d0f";
-        soundOn = d.sound ?? true; vibOn = d.vib ?? true;
+        soundOn = d.sound ?? true;
         document.getElementById("soundFreq").value = d.soundFreq ?? 660;
-        document.getElementById("vibLen").value = d.vibLen ?? 600;
         document.getElementById("bgColorPick").value = bgColor;
       }
       applyTheme(); applyBgColor(bgColor); applyPattern();
       document.getElementById("soundToggle").textContent = soundOn ? "켜짐" : "꺼짐";
       document.getElementById("soundToggle").classList.toggle("on", soundOn);
-      document.getElementById("vibToggle").textContent = vibOn ? "켜짐" : "꺼짐";
-      document.getElementById("vibToggle").classList.toggle("on", vibOn);
       // 알림 권한 상태 버튼에 반영
       if ("Notification" in window && Notification.permission === "granted") {
         const b = document.getElementById("notifToggle"); b.textContent = "허용됨"; b.classList.add("on");
